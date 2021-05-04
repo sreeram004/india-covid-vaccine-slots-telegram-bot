@@ -34,7 +34,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 NUM_DAYS = 7
-TOKEN = "1779496205:AAEXhbuaD6vmsUEeWt9J_SCQ0JWhoazh22o"
+TOKEN = "KEY-HERE"
 PINCODE, BYE = range(2)
 
 def start(update: Update, _: CallbackContext) -> int:
