@@ -15,6 +15,7 @@ bot.
 
 import logging
 import requests
+import os
 import datetime
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update, ForceReply
 from telegram.ext import (
@@ -34,7 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 NUM_DAYS = 7
-TOKEN = "KEY-HERE"
+TOKEN = os.environ.get("BOT_TOKEN", "TOKEN-HERE")
 PINCODE, BYE = range(2)
 
 def start(update: Update, _: CallbackContext) -> int:
