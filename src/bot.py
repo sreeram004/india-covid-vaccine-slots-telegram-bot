@@ -26,6 +26,7 @@ from telegram.ext import (
     ConversationHandler,
     CallbackContext,
 )
+import utils
 
 # Enable logging
 logging.basicConfig(
@@ -36,18 +37,25 @@ logger = logging.getLogger(__name__)
 
 NUM_DAYS = 7
 TOKEN = os.environ.get("BOT_TOKEN", "TOKEN-HERE")
-PINCODE, BYE = range(2)
+STATECODE, BYE = range(2)
 
 def start(update: Update, _: CallbackContext) -> int:
 
+    states = utils.get_states_list()
+    s = ""
+    for _id, state in states.items():
+        s = s.join(f"\n{_id}.{state}")
+
+    logger.info(f"States are {s}")
     update.message.reply_text(
         'Hi! My name is Vaccine Slot Bot. I will search and find COVID vaccine slots at your pincode\n'
         'Send /cancel to stop talking to me.\n\n'
-        'Enter your 6 digit pincode. I wont talk unless it is 6 digits ;)',
+        'Enter the state number from the list below \n\n'
+        f'{s}',
         reply_markup=ForceReply(),
     )
 
-    return PINCODE
+    return STATECODE
 
 
 def extract_available_dates(pin_code):
@@ -84,9 +92,12 @@ def extract_available_dates(pin_code):
 
     return ", ".join(l_dates)
 
-def pincode(update: Update, _: CallbackContext) -> int:
+def state_list(update: Update, _: CallbackContext) -> int:
     user = update.message.from_user
-    logger.info("Pincode of %s: %s", user.first_name, update.message.text)
+    
+    logger.info(update.message.chat_id)
+    
+    logger.info("State of %s: %s", user.first_name, update.message.text)
 
     update.message.reply_text(
         f'Please wait while I search......', reply_markup=None
@@ -119,6 +130,14 @@ def cancel(update: Update, _: CallbackContext) -> int:
 
     return ConversationHandler.END
 
+def stop_bot(update: Update, _: CallbackContext) -> int:
+    user = update.message.from_user
+    logger.info("User %s canceled the conversation.", user.first_name)
+    update.message.reply_text(
+        'Bye.!', reply_markup=ReplyKeyboardRemove()
+    )
+
+    return ConversationHandler.END
 
 def main() -> None:
     # Create the Updater and pass it your bot's token.
@@ -127,11 +146,10 @@ def main() -> None:
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
 
-    # Add conversation handler with the states GENDER, PHOTO, LOCATION and BIO
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+        entry_points=[CommandHandler('start', start), CommandHandler("stop_bot", stop_bot)],
         states={
-            PINCODE: [MessageHandler(Filters.regex('\d{6}'), pincode)],
+            STATECODE: [MessageHandler(Filters.regex('\d+'), state_list)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
