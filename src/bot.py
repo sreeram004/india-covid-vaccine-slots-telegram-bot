@@ -14,9 +14,7 @@ bot.
 """
 
 import logging
-import requests
 import os
-import datetime
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update, ForceReply
 from telegram.ext import (
     Updater,
@@ -26,7 +24,8 @@ from telegram.ext import (
     ConversationHandler,
     CallbackContext,
 )
-import utils
+
+import db_operations
 
 # Enable logging
 logging.basicConfig(
@@ -37,88 +36,124 @@ logger = logging.getLogger(__name__)
 
 NUM_DAYS = 7
 TOKEN = os.environ.get("BOT_TOKEN", "TOKEN-HERE")
-STATECODE, BYE = range(2)
+DISTRICT, AGE, CHECK, WORK, BYE = range(5)
+CHECK_MINTS = 1
+
 
 def start(update: Update, _: CallbackContext) -> int:
-
-    states = utils.get_states_list()
+    states = db_operations.StateDB().get_states()
     s = ""
-    for _id, state in states.items():
-        s = s.join(f"\n{_id}.{state}")
+    for state in states:
+        s += f"{state['state_id']}. {state['state_name']}\n"
 
-    logger.info(f"States are {s}")
     update.message.reply_text(
         'Hi! My name is Vaccine Slot Bot. I will search and find COVID vaccine slots at your pincode\n'
         'Send /cancel to stop talking to me.\n\n'
         'Enter the state number from the list below \n\n'
-        f'{s}',
-        reply_markup=ForceReply(),
+        '{}'.format(s),
+        reply_markup=ReplyKeyboardRemove(),
     )
 
-    return STATECODE
+    return DISTRICT
 
 
-def extract_available_dates(pin_code):
-
-    l_slots_data = {}
-
-    URL = "https://cdn-api.co-vin.in/api/v2/appointment/sessions/public/calendarByPin?pincode={0}&date={1}"
-
-    base = datetime.datetime.today()
-    l_next_NUM_DAYS_days = [base + datetime.timedelta(days=x) for x in range(NUM_DAYS)]
-
-    for date in l_next_NUM_DAYS_days:
-        
-        s_date = date.strftime("%d-%m-%Y")
-        response = requests.get(URL.format(pin_code, s_date))
-        if response.ok:
-            data = response.json()
-            if data["centers"]:
-                logger.info("You can book vaccine slots on {}".format(s_date))
-                logger.info(data["centers"][0])
-                l_slots_data[date] = True
-            else:
-                logger.info("No available slots on {}".format(s_date))
-                l_slots_data[date]= False
-        else:
-            logger.error("API call failed.!")
-            l_slots_data[date] = False
-
-
-    l_dates = []
-    for key, val in l_slots_data.items():
-        if val is True:
-            l_dates.append(key.strftime("%d-%B-%Y"))
-
-    return ", ".join(l_dates)
-
-def state_list(update: Update, _: CallbackContext) -> int:
+def district_list(update: Update, con: CallbackContext) -> int:
     user = update.message.from_user
-    
+
     logger.info(update.message.chat_id)
-    
+
     logger.info("State of %s: %s", user.first_name, update.message.text)
 
+    state_id = int(update.message.text)
+    states = db_operations.StateDB().get_states()
+    state_name = [state["state_name"] for state in states if state["state_id"] == state_id]
+
+    logger.info(f"I found state name as {state_name}")
+
+    districts = db_operations.DistrictDB().get_districts(state_id=state_id)
+
+    s = ""
+    for state in districts:
+        s += f"{state['district_id']}. {state['district_name']}\n"
+
+    logger.info(s)
+
     update.message.reply_text(
-        f'Please wait while I search......', reply_markup=None
+        'Enter the district number from the list below \n\n'
+        '{}'.format(s),
+        reply_markup=ReplyKeyboardRemove(),
     )
 
-    pin_code = update.message.text
-    s_dates = extract_available_dates(pin_code=pin_code)
+    con.user_data["state_id"] = state_id
+    con.user_data["state_name"] = state_name
 
-    if len(s_dates) > 0:   
-        update.message.reply_text(
-            f'At Pincode {pin_code}, You can book slots on these days : {s_dates}',
-            reply_markup=ReplyKeyboardRemove(),
-        )
-    else:
-        update.message.reply_text(
-            f'No Slots Availabe at {pin_code} for next {NUM_DAYS} days',
-            reply_markup=ReplyKeyboardRemove(),
-        )
+    return AGE
+
+
+def age(update: Update, con: CallbackContext) -> int:
+    district_id = int(update.message.text)
+    logger.info(f"District is {district_id}")
+
+    state_id = con.user_data["state_id"]
+    districts = db_operations.DistrictDB().get_districts(state_id)
+    district_name = [dist["district_name"] for dist in districts if dist["district_id"] == district_id][0]
+
+    logger.info(f"Found dist name as {district_name}")
+
+    update.message.reply_text(
+        f'Tell me your age.',
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+    con.user_data["district_id"] = district_id
+    con.user_data["district_name"] = district_name
+
+    return CHECK
+
+
+def check(update: Update, con: CallbackContext) -> int:
+    logger.info(f"Age is {update.message.text}")
+
+    update.message.reply_text(
+        f'Do you want me to check vaccine slot availability at {con.user_data["district_name"]} '
+        f'district for {update.message.text}+ age every {CHECK_MINTS} minutes.?',
+        reply_markup=ReplyKeyboardMarkup([["Yes", "No"]], one_time_keyboard=True),
+    )
+
+    con.user_data["age"] = int(update.message.text)
+
+    return WORK
+
+
+def do_work_or_quit(update: Update, con: CallbackContext) -> int:
+    logger.info(f"Reply is {update.message.text}")
+
+    if update.message.text == "No":
+        return BYE
+
+    update.message.reply_text(
+        f'I will check every {CHECK_MINTS} minutes from now and notify if there is a slot availability.!'
+        '\nSend /stop_bot to make me stop checking',
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+    logger.info(f"Chat id : {update.message.chat_id} - State : {con.user_data['state_id']} - "
+                f"District : {con.user_data['district_id']}, Age : {con.user_data['age']}")
+
+    status = db_operations.BotDB().insert(
+        {
+            "chat_id": update.message.chat_id,
+            "state_id": con.user_data['state_id'],
+            "state_name": con.user_data['state_name'],
+            "district_id": con.user_data['district_id'],
+            "district_name": con.user_data['district_name'],
+            "age": con.user_data['age']
+        }
+    )
+
+    logger.info(f"{status}")
 
     return ConversationHandler.END
-
 
 
 def cancel(update: Update, _: CallbackContext) -> int:
@@ -130,14 +165,18 @@ def cancel(update: Update, _: CallbackContext) -> int:
 
     return ConversationHandler.END
 
+
 def stop_bot(update: Update, _: CallbackContext) -> int:
     user = update.message.from_user
-    logger.info("User %s canceled the conversation.", user.first_name)
+    logger.info("User %s canceled the checking", user.first_name)
     update.message.reply_text(
-        'Bye.!', reply_markup=ReplyKeyboardRemove()
+        'Bye.! I will not check slots from now.!', reply_markup=ReplyKeyboardRemove()
     )
 
+    db_operations.BotDB().delete(chat_id=update.message.chat_id)
+
     return ConversationHandler.END
+
 
 def main() -> None:
     # Create the Updater and pass it your bot's token.
@@ -149,7 +188,10 @@ def main() -> None:
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start), CommandHandler("stop_bot", stop_bot)],
         states={
-            STATECODE: [MessageHandler(Filters.regex('\d+'), state_list)],
+            DISTRICT: [MessageHandler(Filters.regex('\d+'), district_list)],
+            AGE: [MessageHandler(Filters.regex('\d+'), age)],
+            CHECK: [MessageHandler(Filters.regex('\d+'), check)],
+            WORK: [MessageHandler(Filters.regex('^(Yes|No)$'), do_work_or_quit)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
