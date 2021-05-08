@@ -26,6 +26,7 @@ from telegram.ext import (
 )
 
 import db_operations
+import poller
 
 # Enable logging
 logging.basicConfig(
@@ -137,13 +138,6 @@ def do_work_or_quit(update: Update, con: CallbackContext) -> int:
     if update.message.text == "No":
         return BYE
 
-    update.message.reply_text(
-        f'I will check every {CHECK_MINTS} minutes from now and notify '
-        f'if there is a slot availability.!'
-        '\nSend /stop_bot to make me stop checking',
-        reply_markup=ReplyKeyboardRemove()
-    )
-
     logger.info(f"Chat id : {update.message.chat_id} - "
                 f"State : {con.user_data['state_id']} - "
                 f"District : {con.user_data['district_id']}, "
@@ -161,6 +155,20 @@ def do_work_or_quit(update: Update, con: CallbackContext) -> int:
     )
 
     logger.info(f"{status}")
+    
+    poller.Poller(num_days=1, wait=CHECK_MINTS) \
+        .notify_one_user(district=con.user_data['district_id'],
+                         age=con.user_data['age'],
+                         district_name=con.user_data['district_name'],
+                         chat_id=update.message.chat_id,
+                         force=True)
+    
+    update.message.reply_text(
+        f'I will check every {CHECK_MINTS} minutes and notify '
+        f'when there is a slot availability.!'
+        '\nSend /stop_bot to make me stop checking',
+        reply_markup=ReplyKeyboardRemove()
+    )
 
     return ConversationHandler.END
 
@@ -188,6 +196,32 @@ def stop_bot(update: Update, _: CallbackContext) -> int:
     return ConversationHandler.END
 
 
+def check_now(update: Update, _: CallbackContext) -> int:
+    chat_id = update.message.chat_id
+    logger.info(f"{chat_id} wants to check availability now.!")
+    user_data = db_operations.BotDB()._get_item(chat_id=chat_id)
+    
+    if len(user_data) == 0:
+        logger.info(f"User data not found for {chat_id}")
+        update.message.reply_text(
+            'Looks like you are not registered with the bot, to do that Send'
+            ' /start', reply_markup=ReplyKeyboardRemove()
+        )
+        return ConversationHandler.END
+        
+    logger.info("Got data from DB for {}".format(chat_id))
+    user_data = user_data[0]
+    
+    poller.Poller(num_days=1, wait=CHECK_MINTS) \
+        .notify_one_user(district=user_data['district_id'],
+                         age=user_data['age'],
+                         district_name=user_data['district_name'],
+                         chat_id=chat_id,
+                         force=True)
+        
+    return ConversationHandler.END
+    
+
 def main() -> None:
     # Create the Updater and pass it your bot's token.
     updater = Updater(TOKEN)
@@ -197,7 +231,8 @@ def main() -> None:
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start),
-                      CommandHandler("stop_bot", stop_bot)],
+                      CommandHandler("stop_bot", stop_bot),
+                      CommandHandler("check_now", check_now)],
         states={
             DISTRICT: [MessageHandler(Filters.regex('\d+'), district_list)],
             AGE: [MessageHandler(Filters.regex('\d+'), age)],

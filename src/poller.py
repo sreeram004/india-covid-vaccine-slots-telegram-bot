@@ -5,6 +5,7 @@ import telegram
 import time
 import logging
 import os
+import pytz
 
 # Enable logging
 logging.basicConfig(
@@ -14,10 +15,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-db = BotDB()
-
 CHECK_MINTS = int(os.environ.get("CHECK_DELAY", 1))
-TOKEN = os.environ.get("BOT_TOKEN")
 
 
 class Poller:
@@ -25,6 +23,7 @@ class Poller:
         self.db = BotDB()
         self.NUM_DAYS = num_days
         self.wait = wait
+        self.bot = telegram.Bot(token=os.environ.get("BOT_TOKEN"))
 
         self.API_URL = "https://cdn-api.co-vin.in/api/v2/appointment/sessions/public/findByDistrict?district_id={" \
                        "0}&date={1} "
@@ -55,7 +54,12 @@ class Poller:
 
     def __extract_info(self, district, age):
 
-        base = datetime.datetime.today()
+        time_zone = pytz.timezone("Asia/Calcutta")
+        base = time_zone.localize(datetime.datetime.today())
+        if base.hour >= 18:
+            logger.info("Time is now past 6PM. Will check slots for next day")
+            base += datetime.timedelta(days=1)
+            
         l_next_NUM_DAYS_days = \
             [base + datetime.timedelta(days=x) for x in range(self.NUM_DAYS)]
 
@@ -73,11 +77,13 @@ class Poller:
 
         return d_details
 
-    def __build_message(self, district, details):
+    def __build_message(self, district, details, force=False):
 
         msg_yes = f"You have a vaccine slot now available at {district} district.!!!\nSee Details below.\n"
-        msg_no = f"You don't have a vaccine slot now available at {district} district.!!!\n\n I will check again in " \
-                 f"{self.wait} minutes"
+        msg_no = f"You don't have a vaccine slot now available at {district} district.!!!\n\n"
+                 
+        if not force:
+            msg_no += "I will check again in {self.wait} minutes\n"
 
         available = False
         for date, data in details.items():
@@ -90,33 +96,60 @@ class Poller:
                     msg_yes += txt
 
         if not available:
-            return msg_no
+            return False, msg_no
 
-        return msg_yes
+        return True, msg_yes
 
-    @staticmethod
-    def send(msg, chat_id):
+    def send(self, msg, chat_id):
         """
         Send a message to a telegram user specified on chatId
         chat_id must be a number!
         """
-        logger.info(f"Sending Message to {chat_id}")
-        bot = telegram.Bot(token=TOKEN)
-        bot.sendMessage(chat_id=chat_id, text=msg)
-
+        self.bot.sendMessage(chat_id=chat_id, text=msg)
+        
+    def _send_notification(self, msg, chat_id):
+        
+        l_msg = [msg[i:i + 4000] for i in range(0, len(msg), 4000)]
+        for m in l_msg:
+            self.send(m, chat_id)
+            
+            
+    def notify_one_user(self, district, age, district_name, chat_id,
+                        force=False):
+        
+        details = self.__extract_info(district, age)
+        flag, msg = self.__build_message(district_name, details, force=force)
+        
+        if force:
+            logger.info(f"Notication will be send forcefully to {chat_id} at this time")
+            self._send_notification(msg, chat_id)
+            return
+        
+        if os.environ.get("RUN_ENV", "DEV") == "DEV":
+            logger.info(f"Notification will be send to {chat_id} at this time")
+            self._send_notification(msg, chat_id)
+        if os.environ.get("RUN_ENV", "DEV") == "PROD":
+            if flag:
+                logger.info(f"Notification will be send to {chat_id} at this time")
+                self._send_notification(msg, chat_id)
+            else:
+                logger.info(f"Notification will not be send to {chat_id} at this time")
+                            
     def check_in_cowin(self):
-
+        
         _iter = self.__iter_chat_ids()
 
         for chat_id, district, district_name, age in _iter:
-            details = self.__extract_info(district, age)
-            msg = self.__build_message(district_name, details)
-            l_msg = [msg[i:i + 4000] for i in range(0, len(msg), 4000)]
-            for m in l_msg:
-                self.send(m, chat_id)
+            self.notify_one_user(district, age, district_name, chat_id)
+                          
 
-
-poller = Poller(num_days=1, wait=CHECK_MINTS)
-while True:
-    poller.check_in_cowin()
-    time.sleep(CHECK_MINTS * 60)
+def do_polling():
+    poller = Poller(num_days=1, wait=CHECK_MINTS)
+    while True:
+        logger.info("Wokeup.!")
+        poller.check_in_cowin()
+        logger.info("Going to sleep.!")
+        time.sleep(CHECK_MINTS * 60)
+        
+if __name__ == "__main__":
+    do_polling()
