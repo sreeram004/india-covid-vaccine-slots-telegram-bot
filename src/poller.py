@@ -24,6 +24,7 @@ class Poller:
         self.NUM_DAYS = num_days
         self.wait = wait
         self.bot = telegram.Bot(token=os.environ.get("BOT_TOKEN"))
+        self.ROLL_OVER_TIME = int(os.environ.get("ROLL_OVER_TIME", 18))
 
         self.API_URL = "https://cdn-api.co-vin.in/api/v2/appointment/sessions/public/findByDistrict?district_id={" \
                        "0}&date={1} "
@@ -55,10 +56,12 @@ class Poller:
     def __extract_info(self, district, age):
 
         time_zone = pytz.timezone("Asia/Calcutta")
-        base = time_zone.localize(datetime.datetime.today())
-        if base.hour >= 18:
-            logger.info("Time is now past 6PM. Will check slots for next day")
+        base = datetime.datetime.now(time_zone)
+        if base.hour >= self.ROLL_OVER_TIME:
+            logger.info(f"Time is now past {self.ROLL_OVER_TIME} hours. Will check slots for next day")
             base += datetime.timedelta(days=1)
+            
+        logger.info(f"Date is {base}")
             
         l_next_NUM_DAYS_days = \
             [base + datetime.timedelta(days=x) for x in range(self.NUM_DAYS)]

@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 NUM_DAYS = 7
 TOKEN = os.environ.get("BOT_TOKEN")
-DISTRICT, AGE, CHECK, WORK, BYE = range(5)
+DISTRICT, AGE, CHECK, WORK = range(4)
 CHECK_MINTS = int(os.environ.get("CHECK_DELAY", 1))
 
 
@@ -136,7 +136,10 @@ def do_work_or_quit(update: Update, con: CallbackContext) -> int:
     logger.info(f"Reply is {update.message.text}")
 
     if update.message.text == "No":
-        return BYE
+        update.message.reply_text(
+            'Ok then.! Bye.!', reply_markup=ReplyKeyboardRemove()
+        )
+        return ConversationHandler.END
 
     logger.info(f"Chat id : {update.message.chat_id} - "
                 f"State : {con.user_data['state_id']} - "
@@ -154,8 +157,22 @@ def do_work_or_quit(update: Update, con: CallbackContext) -> int:
         }
     )
 
-    logger.info(f"{status}")
-    
+    if not status:
+        logger.info("User already available in DB.!")
+        user_data = db_operations.BotDB() \
+            ._get_item(chat_id=update.message.chat_id)[0]
+        district = user_data['district_name']
+        age = user_data['age']
+        
+        update.message.reply_text(
+            f'Bot is already checking vaccine availability for you at {district} district '
+            f'for {age}+ age. If you want to check availability now for {district} district '
+            f'for {age}+ age, Send /check_now. If you want to stop checking, Send /stop_bot',
+            reply_markup=ReplyKeyboardRemove()
+        )
+        
+        return ConversationHandler.END
+            
     poller.Poller(num_days=1, wait=CHECK_MINTS) \
         .notify_one_user(district=con.user_data['district_id'],
                          age=con.user_data['age'],
@@ -220,7 +237,7 @@ def check_now(update: Update, _: CallbackContext) -> int:
                          force=True)
         
     return ConversationHandler.END
-    
+
 
 def main() -> None:
     # Create the Updater and pass it your bot's token.
