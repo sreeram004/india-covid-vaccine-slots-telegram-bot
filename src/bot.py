@@ -43,6 +43,25 @@ CHECK_MINTS = int(os.environ.get("CHECK_DELAY", 1))
 
 
 def start(update: Update, _: CallbackContext) -> int:
+
+    data = db_operations.BotDB()._get_item(chat_id=update.message.chat_id)
+    
+    if len(data) > 0:
+    
+        logger.info("User already available in DB.!")
+        user_data = data[0]
+        district = user_data['district_name']
+        age = user_data['age']
+        
+        update.message.reply_text(
+            f'Bot is already checking vaccine availability for you at {district} district '
+            f'for {age}+ age. If you want to check availability now for {district} district '
+            f'for {age}+ age, Send /check_now. If you want to stop checking, Send /stop_bot',
+            reply_markup=ReplyKeyboardRemove()
+        )
+        
+        return ConversationHandler.END
+    
     states = db_operations.StateDB().get_states()
     s = ""
     for state in states:
