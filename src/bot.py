@@ -76,8 +76,6 @@ def district_list(update: Update, con: CallbackContext) -> int:
     for state in districts:
         s += f"{state['district_id']}. {state['district_name']}\n"
 
-    logger.info(s)
-
     update.message.reply_text(
         'Enter the district number from the list below \n\n'
         '{}'.format(s),

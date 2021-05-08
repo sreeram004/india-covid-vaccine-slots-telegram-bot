@@ -1,11 +1,14 @@
 from tinydb import TinyDB, Query
+from pathlib import Path
 
-USERS_DB_PATH = "DATA.json"
+data_path = Path(__file__).parent / "data"
+
+USERS_DB_PATH = data_path / "DATA.json"
 USERS_TABLE_NAME = "users"
-STATES_DB_PATH = "STATES.json"
+STATES_DB_PATH = data_path / "STATES.json"
 STATES_TABLE_NAME = "states"
-DISTRICT_DB_PATH = "DIST.json"
-DISTRICT_TABLE_NAME = "district"
+DISTRICT_DB_PATH = data_path / "DISTRICTS.json"
+DISTRICT_TABLE_NAME = "districts"
 
 
 class BotDB:
