@@ -48,4 +48,3 @@ class DistrictDB:
 
     def get_districts(self, state_id):
         return self.dist_table.search(Query().state_id == state_id)
-
