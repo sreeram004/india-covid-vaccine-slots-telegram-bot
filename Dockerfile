@@ -1,10 +1,13 @@
 FROM python:3.7
 
-RUN pip install python-telegram-bot
-RUN pip install tinydb
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir python-telegram-bot tinydb requests
 
 RUN mkdir /src
 ADD . /src
 WORKDIR /src
 
-CMD python src/bot.py
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+CMD ["./entrypoint.sh"]
