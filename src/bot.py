@@ -15,7 +15,7 @@ bot.
 
 import logging
 import os
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update, ForceReply
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -29,15 +29,16 @@ import db_operations
 
 # Enable logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
 )
 
 logger = logging.getLogger(__name__)
 
 NUM_DAYS = 7
-TOKEN = os.environ.get("BOT_TOKEN", "TOKEN-HERE")
+TOKEN = os.environ.get("BOT_TOKEN")
 DISTRICT, AGE, CHECK, WORK, BYE = range(5)
-CHECK_MINTS = 1
+CHECK_MINTS = int(os.environ.get("CHECK_DELAY", 1))
 
 
 def start(update: Update, _: CallbackContext) -> int:
@@ -47,7 +48,8 @@ def start(update: Update, _: CallbackContext) -> int:
         s += f"{state['state_id']}. {state['state_name']}\n"
 
     update.message.reply_text(
-        'Hi! My name is Vaccine Slot Bot. I will search and find COVID vaccine slots at your pincode\n'
+        'Hi! My name is Vaccine Slot Bot. I will search and find COVID vaccine'
+        ' slots at your pincode\n'
         'Send /cancel to stop talking to me.\n\n'
         'Enter the state number from the list below \n\n'
         '{}'.format(s),
@@ -66,17 +68,17 @@ def district_list(update: Update, con: CallbackContext) -> int:
 
     state_id = int(update.message.text)
     states = db_operations.StateDB().get_states()
-    state_name = [state["state_name"] for state in states if state["state_id"] == state_id]
+    state_name = [state["state_name"] for state in states
+                  if state["state_id"] == state_id]
 
     logger.info(f"I found state name as {state_name}")
 
-    districts = db_operations.DistrictDB().get_districts(state_id=state_id)
+    districts = db_operations.DistrictDB() \
+        .get_districts(state_id=state_id)
 
     s = ""
     for state in districts:
         s += f"{state['district_id']}. {state['district_name']}\n"
-
-    logger.info(s)
 
     update.message.reply_text(
         'Enter the district number from the list below \n\n'
@@ -96,12 +98,13 @@ def age(update: Update, con: CallbackContext) -> int:
 
     state_id = con.user_data["state_id"]
     districts = db_operations.DistrictDB().get_districts(state_id)
-    district_name = [dist["district_name"] for dist in districts if dist["district_id"] == district_id][0]
+    district_name = [dist["district_name"] for dist in districts
+                        if dist["district_id"] == district_id][0]
 
     logger.info(f"Found dist name as {district_name}")
 
     update.message.reply_text(
-        f'Tell me your age.',
+        'Tell me your age.',
         reply_markup=ReplyKeyboardRemove()
     )
 
@@ -115,9 +118,12 @@ def check(update: Update, con: CallbackContext) -> int:
     logger.info(f"Age is {update.message.text}")
 
     update.message.reply_text(
-        f'Do you want me to check vaccine slot availability at {con.user_data["district_name"]} '
-        f'district for {update.message.text}+ age every {CHECK_MINTS} minutes.?',
-        reply_markup=ReplyKeyboardMarkup([["Yes", "No"]], one_time_keyboard=True),
+        f'Do you want me to check vaccine slot availability at '
+        f'{con.user_data["district_name"]} '
+        f'district for {update.message.text}+ age every '
+        f'{CHECK_MINTS} minutes.?',
+        reply_markup=ReplyKeyboardMarkup([["Yes", "No"]],
+                                         one_time_keyboard=True),
     )
 
     con.user_data["age"] = int(update.message.text)
@@ -132,13 +138,16 @@ def do_work_or_quit(update: Update, con: CallbackContext) -> int:
         return BYE
 
     update.message.reply_text(
-        f'I will check every {CHECK_MINTS} minutes from now and notify if there is a slot availability.!'
+        f'I will check every {CHECK_MINTS} minutes from now and notify '
+        f'if there is a slot availability.!'
         '\nSend /stop_bot to make me stop checking',
         reply_markup=ReplyKeyboardRemove()
     )
 
-    logger.info(f"Chat id : {update.message.chat_id} - State : {con.user_data['state_id']} - "
-                f"District : {con.user_data['district_id']}, Age : {con.user_data['age']}")
+    logger.info(f"Chat id : {update.message.chat_id} - "
+                f"State : {con.user_data['state_id']} - "
+                f"District : {con.user_data['district_id']}, "
+                f"Age : {con.user_data['age']}")
 
     status = db_operations.BotDB().insert(
         {
@@ -170,7 +179,8 @@ def stop_bot(update: Update, _: CallbackContext) -> int:
     user = update.message.from_user
     logger.info("User %s canceled the checking", user.first_name)
     update.message.reply_text(
-        'Bye.! I will not check slots from now.!', reply_markup=ReplyKeyboardRemove()
+        'Bye.! I will not check slots from now.!',
+        reply_markup=ReplyKeyboardRemove()
     )
 
     db_operations.BotDB().delete(chat_id=update.message.chat_id)
@@ -186,12 +196,14 @@ def main() -> None:
     dispatcher = updater.dispatcher
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start), CommandHandler("stop_bot", stop_bot)],
+        entry_points=[CommandHandler('start', start),
+                      CommandHandler("stop_bot", stop_bot)],
         states={
             DISTRICT: [MessageHandler(Filters.regex('\d+'), district_list)],
             AGE: [MessageHandler(Filters.regex('\d+'), age)],
             CHECK: [MessageHandler(Filters.regex('\d+'), check)],
-            WORK: [MessageHandler(Filters.regex('^(Yes|No)$'), do_work_or_quit)],
+            WORK: [MessageHandler(Filters.regex('^(Yes|No)$'),
+                                  do_work_or_quit)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )

@@ -8,19 +8,20 @@ import os
 
 # Enable logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
 )
 
 logger = logging.getLogger(__name__)
 
 db = BotDB()
 
-CHECK_MINTS = 1
-TOKEN = os.environ.get("BOT_TOKEN", "TOKEN-HERE")
+CHECK_MINTS = int(os.environ.get("CHECK_DELAY", 1))
+TOKEN = os.environ.get("BOT_TOKEN")
 
 
 class Poller:
-    def __init__(self, num_days=3, wait=15):
+    def __init__(self, num_days=1, wait=15):
         self.db = BotDB()
         self.NUM_DAYS = num_days
         self.wait = wait
@@ -115,6 +116,7 @@ class Poller:
                 self.send(m, chat_id)
 
 
+poller = Poller(num_days=1, wait=CHECK_MINTS)
 while True:
-    Poller(1, CHECK_MINTS).check_in_cowin()
+    poller.check_in_cowin()
     time.sleep(CHECK_MINTS * 60)
